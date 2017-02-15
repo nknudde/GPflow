@@ -42,6 +42,7 @@ class BayesianDGPLVM(Model):
         self.kern_t = kern_t
         self.Y = DataHolder(Y)
         self.M = M
+        self.n_s = 0
 
     def build_likelihood(self):
         """
@@ -92,34 +93,33 @@ class BayesianDGPLVM(Model):
 
         return bound
 
-    def build_predict(self, t_new, full_cov=False):
-        num_data = tf.shape(self.X_mean[0])[0]
-        Kxx = self.kern_t.K(self.t[0]) + eye(num_data) * 1E-5  # n x n
-        Lx = tf.cholesky(Kxx)
-        Lambda = tf.matrix_diag(tf.transpose(self.X_var[0]))  # q x n x n
-        tmp = eye(num_data) + tf.einsum('ijk,kl->ijl', tf.einsum('ij,kil->kjl', Lx, Lambda), Lx)  # q x n x n
-        Lt = tf.cholesky(tmp)  # q x n x n
-        tmp2 = tf.matrix_triangular_solve(Lt,
-                                          tf.tile(tf.expand_dims(tf.transpose(Lx), 0),
-                                                  tf.pack([self.num_latent, 1, 1])))  # q x n x n
-        S_full = tf.einsum('ikj,ikl->ijl', tmp2, tmp2)
-        S = tf.transpose(tf.matrix_diag_part(S_full))  # n x q
-        mu = tf.matmul(Kxx, self.X_mean[0])
+    def build_latent(self, full_cov=False):
+        S = []
+        m = []
+        for s in self.series:
+            ms, Ss = s.build_latent(self.kern_t, full_cov)
+            m.append(ms)
+            S.append(Ss)
+        return m, S
 
-        Kno = self.kern_t.K(t_new, self.t[0])
-        Koo = self.kern_t.K(self.t[0])
-        Knn = self.kern_t.K(t_new)
-        j = tf.matrix_diag(tf.matrix_transpose(1. / self.X_var[0])) + Koo  # q x n x n
-        Lj = tf.cholesky(j)
-        mu_xn = tf.matmul(Kno, self.X_mean[0])  # n x q
-        temp3 = tf.matrix_triangular_solve(Lj, tf.tile(tf.expand_dims(tf.transpose(Kno), 0),
-                                                       [self.num_latent, 1, 1]))  # q x n x n
-        var_xn = Knn - tf.einsum('ijk,ijl->ikl', temp3, temp3)
-        var_xn = tf.transpose(tf.matrix_diag_part(var_xn))
+    def build_predict(self, t_new, full_cov=False):
+        n_s = self.n_s
+        psi0 = .0
+        psi1 = None
+        psi2 = .0
+
+        for s in self.series:
+            psi0s, psi1s, psi2s = s.build_likelihood(self.Z, self.kern, self.kern_t, give_KL=False)
+            psi0 += psi0s
+            psi2 += psi2s
+            if psi1 is None:
+                psi1 = psi1s
+            else:
+                psi1 = tf.concat(0, [psi1, psi1s])
+
+        mu_xn, var_xn = self.series[n_s].build_predict(t_new, self.kern_t)
 
         num_inducing = tf.shape(self.Z)[0]
-        psi1 = self.kern.eKxz(self.Z, mu, S)
-        psi2 = tf.reduce_sum(self.kern.eKzxKxz(self.Z, mu, S), 0)
         Kuu = self.kern.K(self.Z) + eye(num_inducing) * 1e-6
         sigma2 = self.likelihood.variance
         sigma = tf.sqrt(sigma2)
@@ -152,6 +152,15 @@ class BayesianDGPLVM(Model):
 
         return mean, var
 
+    def predict_serie(self, t_new, noise=False, full=False, n_s=0):
+        self.n_s = n_s
+        if noise:
+            return self.predict_y(t_new)
+        elif full:
+            return self.predict_f_full_cov(t_new)
+        else:
+            return self.predict_f(t_new)
+
     @AutoFlow((float_type, [None, None]))
     def predict_y(self, t_new):
         """
@@ -177,15 +186,6 @@ class BayesianDGPLVM(Model):
         """
         pred = self.build_predict(t_new, True)
         return pred
-
-    def build_latent(self, full_cov=False):
-        S = []
-        m = []
-        for s in self.series:
-            ms, Ss = s.build_latent(self.kern_t, full_cov)
-            m.append(ms)
-            S.append(Ss)
-        return m, S
 
     @AutoFlow()
     def get_latent(self, full_cov=False):
@@ -253,7 +253,7 @@ class TimeSeries(Model):
             t = DataHolder(t)
         self.t = t
 
-    def build_likelihood(self, Z, kern, kern_t):
+    def build_likelihood(self, Z, kern, kern_t, give_KL=True):
         Kxx = kern_t.K(self.t) + eye(self.num_data) * 1E-5  # n x n
         Lx = tf.cholesky(Kxx)
         Lambda = tf.matrix_diag(tf.transpose(self.X_var))  # q x n x n
@@ -274,12 +274,14 @@ class TimeSeries(Model):
         NQ = tf.cast(tf.size(mu), float_type)
 
         muT = tf.transpose(mu)  # q x ns
-        KL = 0.5 * tf.reduce_sum(
-            tf.trace(tf.cholesky_solve(tf.tile(tf.expand_dims(Lx, 0), [self.num_latent, 1, 1]),
-                                       S_full + tf.einsum('ij,ik->ijk', muT, muT)))) + tf.reduce_sum(
-            tf.log(tf.matrix_diag_part(Lt))) - NQ * 0.5
-
-        return KL, psi0, psi1, psi2
+        if give_KL:
+            KL = 0.5 * tf.reduce_sum(
+                tf.trace(tf.cholesky_solve(tf.tile(tf.expand_dims(Lx, 0), [self.num_latent, 1, 1]),
+                                           S_full + tf.einsum('ij,ik->ijk', muT, muT)))) + tf.reduce_sum(
+                tf.log(tf.matrix_diag_part(Lt))) - NQ * 0.5
+            return KL, psi0, psi1, psi2
+        else:
+            return psi0, psi1, psi2
 
     def build_latent(self, kern_t, full_cov=False):
         Kxx = kern_t.K(self.t) + eye(self.num_data) * 1E-5  # n x n
@@ -296,3 +298,16 @@ class TimeSeries(Model):
             S = tf.transpose(tf.matrix_diag_part(tf.einsum('ikj,ikl->ijl', tmp2, tmp2)))
         m = tf.matmul(Kxx, self.X_mean)  # n x q
         return m, S
+
+    def build_predict(self, t_new, kern_t):
+        Kno = kern_t.K(t_new, self.t)
+        Koo = kern_t.K(self.t)
+        Knn = kern_t.K(t_new)
+        j = tf.matrix_diag(tf.matrix_transpose(1. / self.X_var)) + Koo  # q x n x n
+        Lj = tf.cholesky(j)
+        mu_xn = tf.matmul(Kno, self.X_mean)  # n x q
+        temp3 = tf.matrix_triangular_solve(Lj, tf.tile(tf.expand_dims(tf.transpose(Kno), 0),
+                                                       [self.num_latent, 1, 1]))  # q x n x n
+        var_xn = Knn - tf.einsum('ijk,ijl->ikl', temp3, temp3)
+        var_xn = tf.transpose(tf.matrix_diag_part(var_xn))
+        return mu_xn, var_xn
