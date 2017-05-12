@@ -14,8 +14,27 @@ float_type = settings.dtypes.float_types
 
 
 class RGP(Model):
-    def __init__(self, Y, kern_em, kern_tr, input_dim, output_dim, Z):
+    def __init__(self, kernels, Y, Ms, Lt, Qs):
         Model.__init__(self)
+        layers = []
+        assert len(kernels) == len(Ms)
+        assert len(Ms) == len(Qs)
+        assert len(kernels) >= 2
+        N = np.shape(Y)[0]
+        H = len(kernels)
+        self.Lt = Lt
+
+        layers.append(InputLayer(kernels[0], N, Qs[0], Lt, Ms[0]))
+        for i in range(1, H - 1):
+            layers.append(HiddenLayer(kernels[i], N, Qs[i], Lt, Ms[i]))
+        layers.append(OutputLayer(kernels[-1], N, Qs[-1], Lt, Ms[-1], Y))
+        self.layers = layers
+
+    def build_likelihood(self):
+        b, Xm, Xv = self.layers[0].build_likelihood(self.Lt)
+        for i in range(1, len(self.layers)-1):
+            b, Xm, Xv = self.layers[i].build_likelihood(self.Lt, Xm, Xv)
+        return self.layers[-1].build_likelihood(self.Lt, Xm, Xv)
 
 
 class Layer(Parameterized):
