@@ -10,29 +10,10 @@ import numpy as np
 from ._settings import settings
 import tensorflow as tf
 
-float_type = settings.dtypes.float_type
-print(float_type)
+float_type = settings.dtypes.float_types
 
 
-class Test(Parameterized):
-    def __init__(self):
-        super(Test, self).__init__()
-
-    @AutoFlow((float_type, [None, None]), (tf.int32, []))
-    def hankel(self, v, L):
-        """
-        v is the vector you want to Hankel
-        L is the length of the time window
-        """
-        N = tf.shape(v)[0]
-        D = tf.shape(v)[1]
-        idx = tf.expand_dims(tf.range(0, N - L + 1), 1) + tf.expand_dims(tf.range(0, L), 0)
-        l = tf.one_hot(idx, N, axis=-1, dtype=float_type)
-        r = tf.reshape(tf.matmul(tf.reshape(l, [L * (N - L + 1), N]), v), [(N - L + 1), L * D])
-        return r
-
-
-class GPSSM(Model):
+class RGP(Model):
     def __init__(self, Y, kern_em, kern_tr, input_dim, output_dim, Z):
         Model.__init__(self)
 
