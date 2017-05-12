@@ -1,5 +1,5 @@
 from .model import GPModel, Model, Parameterized
-from .param import Param, DataHolder, AutoFlow
+from .param import Param, DataHolder, AutoFlow, ParamList
 from .mean_functions import Zero
 from .transforms import positive
 from .likelihoods import Gaussian
@@ -10,7 +10,7 @@ import numpy as np
 from ._settings import settings
 import tensorflow as tf
 
-float_type = settings.dtypes.float_types
+float_type = settings.dtypes.float_type
 
 
 class RGP(Model):
@@ -29,7 +29,7 @@ class RGP(Model):
         for i in range(1, H - 1):
             layers.append(HiddenLayer(kernels[i], N, Qs[i], Lt, Ms[i]))
         layers.append(OutputLayer(kernels[-1], N, Qs[-1], Lt, Ms[-1], Y))
-        self.layers = layers
+        self.layers = ParamList(layers)
 
     def build_likelihood(self):
         b, Xm, Xv = self.layers[0].build_likelihood(self.Lt)
@@ -49,15 +49,15 @@ class RGP(Model):
             X_m.append(xm)
             X_v.append(xv)
         Ym, Yv = self.layers[-1].predict_x(self.N, self.Lt, xm, xv, xmm, xvm)
-        for i in range(num_samples - 1):
+        for i in range(29):
             xm, xv, xmm, xvm = self.layers[0].predict_x(self.N, self.Lt, X_cms=X_m[0], X_cvs=X_v[0])
             X_m[0] = xm
             X_v[0] = xv
             for i in range(1, len(self.layers) - 1):
                 xm, xv, xmm, xvm = self.layers[i].predict_x(self.N, self.Lt, xm, xv, xmm, xvm, X_cms=X_m[i],
                                                             X_cvs=X_v[i])
-                X_m.append(xm)
-                X_v.append(xv)
+                X_m[i] = xm
+                X_v[i] = xv
             ym, yv = self.layers[-1].predict_x(self.N, self.Lt, xm, xv, xmm, xvm)
             Ym = tf.concat([Ym, ym], 0)
             Yv = tf.concat([Yv, yv], 0)
@@ -69,6 +69,8 @@ class Layer(Parameterized):
         super(Layer, self).__init__()
         self.kern = kernel
         self.likelihood = Gaussian()
+        self.likelihood.variance = 1E-3
+        self.likelihood.variance.fixed = True
 
     def hankel(self, v, L):
         """
@@ -88,7 +90,7 @@ class HiddenLayer(Layer):
         super(HiddenLayer, self).__init__(kernel)
         self.Z = Param(randn(M, 2 * Lt * Q))
         self.X_mean = Param(randn(N + Lt, Q))
-        self.X_var = Param(np.ones(N + Lt, Q), transform=positive)
+        self.X_var = Param(np.ones((N + Lt), Q), transform=positive)
 
     def build_likelihood(self, Lt, Xm_m, Xm_v):
         N = tf.shape(self.X_mean)[0]
@@ -118,26 +120,28 @@ class HiddenLayer(Layer):
         LB = tf.cholesky(B)
         log_det_B = 2. * tf.reduce_sum(tf.log(tf.diag_part(LB)))
         c = tf.matrix_triangular_solve(LB, tf.matmul(A, X_mo), lower=True) / sigma
-        ent = 0.5 * tf.reduce_sum(tf.log(X_vo)) + (N - Lt) * D * .5 * tf.log(2. * np.pi)
-        ent2 = -Lt * D * tf.log(2 * np.pi) - 0.5 * tf.reduce_sum((tf.square(X_mb) + X_vb))
+        ent = 0.5 * tf.reduce_sum(tf.log(X_vo)) + tf.cast((N - Lt) * D, float_type) * .5 * tf.log(2. * np.pi)
+        ent2 = -Lt * tf.cast(D, float_type) * tf.log(2 * np.pi) - 0.5 * tf.reduce_sum((tf.square(X_mb) + X_vb))
 
-        bound = -.5 * (N - Lt) * D * tf.log(2 * np.pi * self.likelihood.variance)
+        bound = -.5 * tf.cast((N - Lt) * D, float_type) * tf.log(2 * np.pi * self.likelihood.variance)
         bound += -.5 / sigma2 * (tf.reduce_sum(X_vo) + tf.reduce_sum(tf.square(X_mo)))
-        bound += -0.5 * D * (tf.reduce_sum(psi0) / sigma2 - tf.reduce_sum(tf.diag_part(AAT)))
-        bound += -0.5 * D * log_det_B
+        bound += -0.5 * tf.cast(D, float_type) * (tf.reduce_sum(psi0) / sigma2 - tf.reduce_sum(tf.diag_part(AAT)))
+        bound += -0.5 * tf.cast(D, float_type) * log_det_B
         bound += 0.5 * tf.reduce_sum(tf.square(c))
         bound += ent
         bound += ent2
         return bound, self.X_mean, self.X_var
 
     def predict_x(self, N, Lt, X_pms, X_pvs, Xp_m, Xp_v, init=False, X_cms=None, X_cvs=None):
+        X_m = tf.concat([self.hankel(tf.slice(self.X_mean, [0, 0], [N + Lt - 1, -1]), Lt),
+                         self.hankel(tf.slice(Xp_m, [1, 0], [N + Lt - 1, -1]), Lt)], 1)
+        X_v = tf.concat([self.hankel(tf.slice(self.X_var, [0, 0], [N + Lt - 1, -1]), Lt),
+                         self.hankel(tf.slice(Xp_v, [1, 0], [N + Lt - 1, -1]), Lt)], 1)
+        Q = tf.shape(self.Z)[1]
         if init:
-            X_cms = tf.slice(self.X_mean, [N - Lt, 0], [-1, -1])
-            X_cvs = tf.slice(self.X_var, [N - Lt, 0], [-1, -1])
-        X_m = tf.concat([self.hankel(tf.slice(self.X_mean, [0, 0], [N - 1, -1]), Lt),
-                         self.hankel(tf.slice(Xp_m, [1, 0], [N - 1, -1]), Lt)], 1)
-        X_v = tf.concat([self.hankel(tf.slice(self.X_var, [0, 0], [N - 1, -1]), Lt),
-                         self.hankel(tf.slice(Xp_v, [1, 0], [N - 1, -1]), Lt)], 1)
+            p = tf.shape(X_m)[0]
+            X_cms = tf.slice(X_m, [p - 1, 0], [-1, Q])
+            X_cvs = tf.slice(X_v, [p - 1, 0], [-1, Q])
 
         Xrms = tf.concat([X_cms, X_pms], 1)
         Xrvs = tf.concat([X_cvs, X_pvs], 1)
@@ -173,8 +177,8 @@ class HiddenLayer(Layer):
         diagonals = psi0star - TT  # 1
         covar1 = tf.diag_part(tf.matmul(c, tf.matmul(tmp6 - tmp4, c), transpose_a=True))  # p x p
         covar = tf.expand_dims(covar1 + diagonals, 1)
-        X_cms = tf.slice(tf.concat([X_m, mean], 0), [1, 0], [-1, -1])
-        X_cvs = tf.slice(tf.concat([X_m, covar], 0), [1, 0], [-1, -1])
+        X_cms = tf.slice(tf.concat([X_cms, mean], 1), [0, 1], [-1, -1])
+        X_cvs = tf.slice(tf.concat([X_cvs, covar], 1), [0, 1], [-1, -1])
         return X_cms, X_cvs, self.X_mean, self.X_var
 
 
@@ -183,7 +187,7 @@ class InputLayer(Layer):
         super(InputLayer, self).__init__(kernel)
         self.Z = Param(randn(M, Lt * Q))
         self.X_mean = Param(randn(N + Lt, Q))
-        self.X_var = Param(np.ones(N + Lt, Q), transform=positive)
+        self.X_var = Param(np.ones((N + Lt, Q)), transform=positive)
 
     def build_likelihood(self, Lt):
         N = tf.shape(self.X_mean)[0]
@@ -211,32 +215,35 @@ class InputLayer(Layer):
         LB = tf.cholesky(B)
         log_det_B = 2. * tf.reduce_sum(tf.log(tf.diag_part(LB)))
         c = tf.matrix_triangular_solve(LB, tf.matmul(A, X_mo), lower=True) / sigma
-        ent = 0.5 * tf.reduce_sum(tf.log(X_vo)) + (N - Lt) * D * .5 * tf.log(2. * np.pi)
-        ent2 = -Lt * D * tf.log(2 * np.pi) - 0.5 * tf.reduce_sum((tf.square(X_mb) + X_vb))
+        ent = 0.5 * tf.reduce_sum(tf.log(X_vo))
+        ent += 0.5 * tf.cast((N - Lt) * D, float_type) * tf.log(tf.cast(2 * np.pi, float_type))
+        ent2 = -tf.cast(Lt * D, float_type) * tf.log(tf.cast(2 * np.pi, float_type)) - 0.5 * tf.reduce_sum(
+            (tf.square(X_mb) + X_vb))
 
-        bound = -.5 * (N - Lt) * D * tf.log(2 * np.pi * self.likelihood.variance)
+        bound = -.5 * tf.cast((N - Lt) * D, float_type) * tf.log(2 * np.pi * self.likelihood.variance)
         bound += -.5 / sigma2 * (tf.reduce_sum(X_vo) + tf.reduce_sum(tf.square(X_mo)))
-        bound += -0.5 * D * (tf.reduce_sum(psi0) / sigma2 - tf.reduce_sum(tf.diag_part(AAT)))
-        bound += -0.5 * D * log_det_B
+        bound += -0.5 * tf.cast(D, float_type) * (tf.reduce_sum(psi0) / sigma2 - tf.reduce_sum(tf.diag_part(AAT)))
+        bound += -0.5 * tf.cast(D, float_type) * log_det_B
         bound += 0.5 * tf.reduce_sum(tf.square(c))
         bound += ent
         bound += ent2
         return bound, self.X_mean, self.X_var
 
     def predict_x(self, N, Lt, init=False, X_cms=None, X_cvs=None):
+        X_m = self.hankel(tf.slice(self.X_mean, [0, 0], [N + Lt - 1, -1]), Lt)
+        X_v = self.hankel(tf.slice(self.X_var, [0, 0], [N + Lt - 1, -1]), Lt)
+        Q = tf.shape(self.Z)[1]
         if init:
-            X_cms = tf.slice(self.X_mean, [N - Lt, 0], [-1, -1])
-            X_cvs = tf.slice(self.X_var, [N - Lt, 0], [-1, -1])
-        X_m = self.hankel(tf.slice(self.X_mean, [0, 0], [N - 1, -1]), Lt)
-        X_v = self.hankel(tf.slice(self.X_var, [0, 0], [N - 1, -1]), Lt)
-
+            p = tf.shape(X_m)[0]
+            X_cms = tf.slice(X_m, [p - 1, 0], [-1, Q])
+            X_cvs = tf.slice(X_v, [p - 1, 0], [-1, Q])
         num_inducing = tf.shape(self.Z)[0]
         psi1 = self.kern.eKxz(self.Z, X_m, X_v)
         psi2 = tf.reduce_sum(self.kern.eKzxKxz(self.Z, X_m, X_v), 0)
         psi0star = tf.reduce_sum(self.kern.eKdiag(X_cms, X_cvs), 0)  # N*
         psi1star = self.kern.eKxz(self.Z, X_cms, X_cvs)  # N* x M
         psi2star = tf.reduce_sum(self.kern.eKzxKxz(self.Z, X_cms, X_cvs), 0)
-        X_mo = tf.slice(self.X_m, [Lt, 0], [-1, -1])
+        X_mo = tf.slice(self.X_mean, [Lt, 0], [-1, -1])
 
         Kuu = self.kern.K(self.Z) + tf.eye(num_inducing, dtype=float_type) * 1e-6  # M x M
         sigma2 = self.likelihood.variance
@@ -262,20 +269,21 @@ class InputLayer(Layer):
         diagonals = psi0star - TT  # 1
         covar1 = tf.diag_part(tf.matmul(c, tf.matmul(tmp6 - tmp4, c), transpose_a=True))  # p x p
         covar = tf.expand_dims(covar1 + diagonals, 1)
-        X_cms = tf.slice(tf.concat([X_m, mean], 0), [1, 0], [-1, -1])
-        X_cvs = tf.slice(tf.concat([X_m, covar], 0), [1, 0], [-1, -1])
-        return X_cms, X_cvs
+        X_cms = tf.slice(tf.concat([X_cms, mean], 1), [0, 1], [-1, -1])
+        X_cvs = tf.reshape(X_cvs, [1, Q])
+        X_cvs = tf.slice(tf.concat([X_cvs, covar], 1), [0, 1], [-1, -1])
+        return X_cms, X_cvs, self.X_mean, self.X_var
 
 
 class OutputLayer(Layer):
     def __init__(self, kernel, N, Q, Lt, M, Y):
-        super(OutputLayer, self).__init__(kernel, N, Q, Lt)
+        super(OutputLayer, self).__init__(kernel)
         self.Z = Param(randn(M, Lt * Q))
         self.Y = DataHolder(Y)
 
     def build_likelihood(self, Lt, Xm_m, Xm_v):
-        N = tf.shape(self.X_mean)[0]
-        D = tf.shape(self.X_mean)[1]
+        N = tf.shape(self.Y)[0] + Lt
+        D = tf.shape(self.Y)[1]
         M = tf.shape(self.Z)[0]
         sigma2 = self.likelihood.variance
         sigma = tf.sqrt(sigma2)
@@ -297,14 +305,15 @@ class OutputLayer(Layer):
         log_det_B = 2. * tf.reduce_sum(tf.log(tf.diag_part(LB)))
         c = tf.matrix_triangular_solve(LB, tf.matmul(A, self.Y), lower=True) / sigma
 
-        bound = -.5 * (N - Lt) * D * tf.log(2 * np.pi * self.likelihood.variance)
+        bound = -.5 * tf.cast((N - Lt) * D, float_type) * tf.log(2 * np.pi * self.likelihood.variance)
         bound += -.5 / sigma2 * (tf.reduce_sum(tf.square(self.Y)))
-        bound += -0.5 * D * (tf.reduce_sum(psi0) / sigma2 - tf.reduce_sum(tf.diag_part(AAT)))
-        bound += -0.5 * D * log_det_B
+        bound += -0.5 * tf.cast(D, float_type) * (tf.reduce_sum(psi0) / sigma2 - tf.reduce_sum(tf.diag_part(AAT)))
+        bound += -0.5 * tf.cast(D, float_type) * log_det_B
         bound += 0.5 * tf.reduce_sum(tf.square(c))
         return bound
 
     def predict_x(self, N, Lt, X_pms, X_pvs, Xp_m, Xp_v):
+        N = tf.shape(self.Y)[0] + Lt
         X_m = self.hankel(tf.slice(Xp_m, [1, 0], [N - 1, -1]), Lt)
         X_v = self.hankel(tf.slice(Xp_v, [1, 0], [N - 1, -1]), Lt)
 
@@ -316,7 +325,6 @@ class OutputLayer(Layer):
         psi0star = tf.reduce_sum(self.kern.eKdiag(Xrms, Xrvs), 0)  # N*
         psi1star = self.kern.eKxz(self.Z, Xrms, Xrvs)  # N* x M
         psi2star = tf.reduce_sum(self.kern.eKzxKxz(self.Z, Xrms, Xrvs), 0)
-        X_mo = tf.slice(self.X_m, [Lt, 0], [-1, -1])
 
         Kuu = self.kern.K(self.Z) + tf.eye(num_inducing, dtype=float_type) * 1e-6  # M x M
         sigma2 = self.likelihood.variance
