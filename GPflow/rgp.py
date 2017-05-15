@@ -12,6 +12,18 @@ float_type = settings.dtypes.float_type
 
 
 class RGP(Model):
+    """
+    Recurrent Gaussian Processes. The key reference is
+
+    ::
+
+      @article{mattos:RGP16,
+        title={Recurrent {G}aussian Processes},
+        author={Mattos, C{\'e}sar Lincoln C and Dai, Zhenwen and Damianou, Andreas and Forth, Jeremy and Barreto, Guilherme A and Lawrence, Neil D},
+        journal={International Conference on Learning Representations (ICLR)},
+        year={2016}
+        }
+    """
     def __init__(self, kernels, Y, Ms, Lt, Qs):
         Model.__init__(self)
         layers = []
