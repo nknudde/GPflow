@@ -49,7 +49,7 @@ class RGP(Model):
             X_m.append(xm)
             X_v.append(xv)
         Ym, Yv = self.layers[-1].predict_x(self.N, self.Lt, xm, xv, xmm, xvm)
-        for i in range(29):
+        for i in range(59):
             xm, xv, xmm, xvm = self.layers[0].predict_x(self.N, self.Lt, X_cms=X_m[0], X_cvs=X_v[0])
             X_m[0] = xm
             X_v[0] = xv
@@ -261,7 +261,7 @@ class InputLayer(Layer):
         mean = tf.matmul(tmp2, c, transpose_a=True)
 
         # All of these: M x M
-        tmp4 = tf.matmul(tmp1, tmp1, transpose_b=True)
+        tmp4 = tf.matmul(tmp2, tmp2, transpose_b=True)
         tmp5 = tf.matrix_triangular_solve(L, tf.transpose(tf.matrix_triangular_solve(L, psi2star)))
         tmp6 = tf.matrix_triangular_solve(LB, tf.transpose(tf.matrix_triangular_solve(LB, tmp5)))
 
@@ -342,7 +342,7 @@ class OutputLayer(Layer):
         mean = tf.matmul(tmp2, c, transpose_a=True)
 
         # All of these: M x M
-        tmp4 = tf.matmul(tmp1, tmp1, transpose_b=True)
+        tmp4 = tf.matmul(tmp2, tmp2, transpose_b=True)
         tmp5 = tf.matrix_triangular_solve(L, tf.transpose(tf.matrix_triangular_solve(L, psi2star)))
         tmp6 = tf.matrix_triangular_solve(LB, tf.transpose(tf.matrix_triangular_solve(LB, tmp5)))
 
