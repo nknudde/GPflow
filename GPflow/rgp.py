@@ -1,9 +1,7 @@
-from .model import GPModel, Model, Parameterized
+from .model import Model, Parameterized
 from .param import Param, DataHolder, AutoFlow, ParamList
-from .mean_functions import Zero
 from .transforms import positive
 from .likelihoods import Gaussian
-from .conditionals import conditional
 from .tf_wraps import eye
 from numpy.random import randn
 import numpy as np
