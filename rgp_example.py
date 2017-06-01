@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 
 Lt = 2 # lag
 H = 2 # layers
-t = np.array(np.linspace(0, 2.2 * np.pi, 100)[:, None])
+t = 5*np.array(np.linspace(0, 2.2 * np.pi, 100)[:, None])
 Dt = t[1, 0] - t[0, 0]
 
 kernels = []
@@ -16,10 +16,10 @@ for i in range(H):
     k.variance.prior = Gamma(3., 1./3.)
     kernels.append(k)
 print('constructing')
-m = RGP(kernels, np.sin(t), [70, 70], Lt, [1, 1])
+m = RGP(kernels, np.sin(t)+np.random.normal(0,1e-3,size=(100,1)), [70, 70], Lt, [1, 1])
 
 print('optimizing')
-m.optimize(disp=True, maxiter=1)
+m.optimize(disp=True, maxiter=50000)
 print(m)
 print('evaluating')
 
