@@ -4,7 +4,7 @@ from GPflow.priors import Gamma
 import numpy as np
 import matplotlib.pyplot as plt
 
-Lt = 2ij
+Lt = 2
 t = np.array(np.linspace(0, 2.2 * np.pi, 100)[:, None])
 Dt = t[1, 0] - t[0, 0]
 kernels = [RBF(Lt, ARD=True, lengthscales=1.), RBF(Lt, ARD=True, lengthscales=1.)]
