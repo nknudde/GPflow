@@ -1,6 +1,6 @@
 from .model import Model, Parameterized
 from .param import Param, DataHolder, AutoFlow, ParamList
-from .transforms import positive
+from .transforms import positive, Log1pe
 from .likelihoods import Gaussian
 from .tf_wraps import eye
 from numpy.random import randn
@@ -19,7 +19,8 @@ class RGP(Model):
 
       @article{mattos:RGP16,
         title={Recurrent {G}aussian Processes},
-        author={Mattos, C{\'e}sar Lincoln C and Dai, Zhenwen and Damianou, Andreas and Forth, Jeremy and Barreto, Guilherme A and Lawrence, Neil D},
+        author={Mattos, C{\'e}sar Lincoln C and Dai, Zhenwen and Damianou, Andreas and Forth, Jeremy and Barreto, \\
+                Guilherme A and Lawrence, Neil D},
         journal={International Conference on Learning Representations (ICLR)},
         year={2016}
         }
@@ -100,7 +101,7 @@ class HiddenLayer(Layer):
         super(HiddenLayer, self).__init__(kernel)
         self.Z = Param(randn(M, 2 * Lt * Q))
         self.X_mean = Param(randn(N + Lt, Q))
-        self.X_var = Param(np.ones((N + Lt), Q), transform=positive)
+        self.X_var = Param(np.ones((N + Lt, Q)), transform=positive)
 
     def build_likelihood(self, Lt, Xm_m, Xm_v):
         N = tf.shape(self.X_mean)[0]
@@ -130,8 +131,8 @@ class HiddenLayer(Layer):
         LB = tf.cholesky(B)
         log_det_B = 2. * tf.reduce_sum(tf.log(tf.diag_part(LB)))
         c = tf.matrix_triangular_solve(LB, tf.matmul(A, X_mo), lower=True) / sigma
-        ent = 0.5 * tf.reduce_sum(tf.log(X_vo)) + tf.cast((N - Lt) * D, float_type) * .5 * tf.log(2. * np.pi)
-        ent2 = -Lt * tf.cast(D, float_type) * tf.log(2 * np.pi) - 0.5 * tf.reduce_sum((tf.square(X_mb) + X_vb))
+        ent = 0.5 * tf.reduce_sum(tf.log(X_vo)) + tf.cast((N - Lt) * D, float_type) * .5 * tf.log(tf.cast(2 * np.pi, float_type))
+        ent2 = -Lt * tf.cast(D, float_type) * tf.log(tf.cast(2 * np.pi, float_type)) - 0.5 * tf.reduce_sum((tf.square(X_mb) + X_vb))
 
         bound = -.5 * tf.cast((N - Lt) * D, float_type) * tf.log(2 * np.pi * self.likelihood.variance)
         bound += -.5 / sigma2 * (tf.reduce_sum(X_vo) + tf.reduce_sum(tf.square(X_mo)))
@@ -161,7 +162,7 @@ class HiddenLayer(Layer):
         psi0star = tf.reduce_sum(self.kern.eKdiag(Xrms, Xrvs), 0)  # N*
         psi1star = self.kern.eKxz(self.Z, Xrms, Xrvs)  # N* x M
         psi2star = tf.reduce_sum(self.kern.eKzxKxz(self.Z, Xrms, Xrvs), 0)
-        X_mo = tf.slice(self.X_m, [Lt, 0], [-1, -1])
+        X_mo = tf.slice(self.X_mean, [Lt, 0], [-1, -1])
 
         Kuu = self.kern.K(self.Z) + tf.eye(num_inducing, dtype=float_type) * 1e-6  # M x M
         sigma2 = self.likelihood.variance
