@@ -127,7 +127,7 @@ class HiddenLayer(Layer):
         X_vo = tf.slice(self.X_var, [Lt, 0], [-1, -1])
         X_mb = tf.slice(self.X_mean, [0, 0], [Lt, -1])
         X_vb = tf.slice(self.X_var, [0, 0], [Lt, -1])
-        Kuu = self.kern.K(self.Z) + 1E-6 * tf.eye(M, dtype=float_type)
+        Kuu = self.kern.K(self.Z) + tf.eye(M, dtype=float_type) * settings.numerics.jitter_level
         psi0 = tf.reduce_sum(self.kern.eKdiag(X_m, X_v), 0)
         psi1 = self.kern.eKxz(self.Z, X_m, X_v)
         psi2 = tf.reduce_sum(self.kern.eKzxKxz(self.Z, X_m, X_v), 0)
@@ -173,7 +173,7 @@ class HiddenLayer(Layer):
         psi2star = tf.reduce_sum(self.kern.eKzxKxz(self.Z, Xrms, Xrvs), 0)
         X_mo = tf.slice(self.X_mean, [Lt, 0], [-1, -1])
 
-        Kuu = self.kern.K(self.Z) + tf.eye(num_inducing, dtype=float_type) * 1e-6  # M x M
+        Kuu = self.kern.K(self.Z) + tf.eye(num_inducing, dtype=float_type) * settings.numerics.jitter_level  # M x M
         sigma2 = self.likelihood.variance
         sigma = tf.sqrt(sigma2)
         L = tf.cholesky(Kuu)  # M x M
@@ -222,7 +222,7 @@ class InputLayer(Layer):
         X_vo = tf.slice(self.X_var, [Lt, 0], [-1, -1])
         X_mb = tf.slice(self.X_mean, [0, 0], [Lt, -1])
         X_vb = tf.slice(self.X_var, [0, 0], [Lt, -1])
-        Kuu = self.kern.K(self.Z) + 1E-6 * tf.eye(M, dtype=float_type)
+        Kuu = self.kern.K(self.Z) + tf.eye(M, dtype=float_type) * settings.numerics.jitter_level
         psi0 = tf.reduce_sum(self.kern.eKdiag(X_m, X_v), 0)
         psi1 = self.kern.eKxz(self.Z, X_m, X_v)
         psi2 = tf.reduce_sum(self.kern.eKzxKxz(self.Z, X_m, X_v), 0)
@@ -265,7 +265,7 @@ class InputLayer(Layer):
         psi2star = tf.reduce_sum(self.kern.eKzxKxz(self.Z, X_cms, X_cvs), 0)
         X_mo = tf.slice(self.X_mean, [Lt, 0], [-1, -1])
 
-        Kuu = self.kern.K(self.Z) + tf.eye(num_inducing, dtype=float_type) * 1e-6  # M x M
+        Kuu = self.kern.K(self.Z) + tf.eye(num_inducing, dtype=float_type) * settings.numerics.jitter_level  # M x M
         sigma2 = self.likelihood.variance
         sigma = tf.sqrt(sigma2)
         L = tf.cholesky(Kuu)  # M x M
@@ -311,7 +311,7 @@ class OutputLayer(Layer):
         X_m = self.hankel(tf.slice(Xm_m, [1, 0], [N - 1, -1]), Lt)
         X_v = self.hankel(tf.slice(Xm_v, [1, 0], [N - 1, -1]), Lt)
 
-        Kuu = self.kern.K(self.Z) + 1E-6 * tf.eye(M, dtype=float_type)
+        Kuu = self.kern.K(self.Z) + tf.eye(M, dtype=float_type) * settings.numerics.jitter_level
         psi0 = tf.reduce_sum(self.kern.eKdiag(X_m, X_v), 0)
         psi1 = self.kern.eKxz(self.Z, X_m, X_v)
         psi2 = tf.reduce_sum(self.kern.eKzxKxz(self.Z, X_m, X_v), 0)
@@ -346,7 +346,7 @@ class OutputLayer(Layer):
         psi1star = self.kern.eKxz(self.Z, Xrms, Xrvs)  # N* x M
         psi2star = tf.reduce_sum(self.kern.eKzxKxz(self.Z, Xrms, Xrvs), 0)
 
-        Kuu = self.kern.K(self.Z) + tf.eye(num_inducing, dtype=float_type) * 1e-6  # M x M
+        Kuu = self.kern.K(self.Z) + tf.eye(num_inducing, dtype=float_type) * settings.numerics.jitter_level  # M x M
         sigma2 = self.likelihood.variance
         sigma = tf.sqrt(sigma2)
         L = tf.cholesky(Kuu)  # M x M
