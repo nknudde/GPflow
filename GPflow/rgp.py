@@ -55,6 +55,8 @@ class RGP(Model):
         
         X_m = []
         X_v = []
+        
+        # point 0
         xm, xv, xmm, xvm = self.layers[0].predict_x(self.N, self.Lt, init=True)
         X_m.append(xm)
         X_v.append(xv)
@@ -63,7 +65,9 @@ class RGP(Model):
             X_m.append(xm)
             X_v.append(xv)
         Ym, Yv = self.layers[-1].predict_x(self.N, self.Lt, xm, xv, xmm, xvm)
-        for i in range(num_samples-1):
+        
+        # remaining points
+        for j in range(num_samples-1):
             xm, xv, xmm, xvm = self.layers[0].predict_x(self.N, self.Lt, X_cms=X_m[0], X_cvs=X_v[0])
             X_m[0] = xm
             X_v[0] = xv
@@ -72,7 +76,9 @@ class RGP(Model):
                                                             X_cvs=X_v[i])
                 X_m[i] = xm
                 X_v[i] = xv
+                
             ym, yv = self.layers[-1].predict_x(self.N, self.Lt, xm, xv, xmm, xvm)
+            
             Ym = tf.concat([Ym, ym], 0)
             Yv = tf.concat([Yv, yv], 0)
         return Ym, Yv
