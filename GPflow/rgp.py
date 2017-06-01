@@ -2,7 +2,6 @@ from .model import Model, Parameterized
 from .param import Param, DataHolder, AutoFlow, ParamList
 from .transforms import positive, Log1pe
 from .likelihoods import Gaussian
-from .tf_wraps import eye
 from numpy.random import randn
 import numpy as np
 from ._settings import settings
@@ -122,7 +121,7 @@ class HiddenLayer(Layer):
         X_vo = tf.slice(self.X_var, [Lt, 0], [-1, -1])
         X_mb = tf.slice(self.X_mean, [0, 0], [Lt, -1])
         X_vb = tf.slice(self.X_var, [0, 0], [Lt, -1])
-        Kuu = self.kern.K(self.Z) + 1E-6 * eye(M)
+        Kuu = self.kern.K(self.Z) + 1E-6 * tf.eye(M, dtype=float_type)
         psi0 = tf.reduce_sum(self.kern.eKdiag(X_m, X_v), 0)
         psi1 = self.kern.eKxz(self.Z, X_m, X_v)
         psi2 = tf.reduce_sum(self.kern.eKzxKxz(self.Z, X_m, X_v), 0)
@@ -131,7 +130,7 @@ class HiddenLayer(Layer):
         A = tf.matrix_triangular_solve(L, tf.transpose(psi1), lower=True) / sigma
         tmp = tf.matrix_triangular_solve(L, psi2, lower=True)
         AAT = tf.matrix_triangular_solve(L, tf.transpose(tmp), lower=True) / sigma2
-        B = AAT + eye(M)
+        B = AAT + tf.eye(M, dtype=float_type)
         LB = tf.cholesky(B)
         log_det_B = 2. * tf.reduce_sum(tf.log(tf.diag_part(LB)))
         c = tf.matrix_triangular_solve(LB, tf.matmul(A, X_mo), lower=True) / sigma
@@ -217,7 +216,7 @@ class InputLayer(Layer):
         X_vo = tf.slice(self.X_var, [Lt, 0], [-1, -1])
         X_mb = tf.slice(self.X_mean, [0, 0], [Lt, -1])
         X_vb = tf.slice(self.X_var, [0, 0], [Lt, -1])
-        Kuu = self.kern.K(self.Z) + 1E-6 * eye(M)
+        Kuu = self.kern.K(self.Z) + 1E-6 * tf.eye(M, dtype=float_type)
         psi0 = tf.reduce_sum(self.kern.eKdiag(X_m, X_v), 0)
         psi1 = self.kern.eKxz(self.Z, X_m, X_v)
         psi2 = tf.reduce_sum(self.kern.eKzxKxz(self.Z, X_m, X_v), 0)
@@ -226,7 +225,7 @@ class InputLayer(Layer):
         A = tf.matrix_triangular_solve(L, tf.transpose(psi1), lower=True) / sigma
         tmp = tf.matrix_triangular_solve(L, psi2, lower=True)
         AAT = tf.matrix_triangular_solve(L, tf.transpose(tmp), lower=True) / sigma2
-        B = AAT + eye(M)
+        B = AAT + tf.eye(M, dtype=float_type)
         LB = tf.cholesky(B)
         log_det_B = 2. * tf.reduce_sum(tf.log(tf.diag_part(LB)))
         c = tf.matrix_triangular_solve(LB, tf.matmul(A, X_mo), lower=True) / sigma
@@ -306,7 +305,7 @@ class OutputLayer(Layer):
         X_m = self.hankel(tf.slice(Xm_m, [1, 0], [N - 1, -1]), Lt)
         X_v = self.hankel(tf.slice(Xm_v, [1, 0], [N - 1, -1]), Lt)
 
-        Kuu = self.kern.K(self.Z) + 1E-6 * eye(M)
+        Kuu = self.kern.K(self.Z) + 1E-6 * tf.eye(M, dtype=float_type)
         psi0 = tf.reduce_sum(self.kern.eKdiag(X_m, X_v), 0)
         psi1 = self.kern.eKxz(self.Z, X_m, X_v)
         psi2 = tf.reduce_sum(self.kern.eKzxKxz(self.Z, X_m, X_v), 0)
@@ -315,7 +314,7 @@ class OutputLayer(Layer):
         A = tf.matrix_triangular_solve(L, tf.transpose(psi1), lower=True) / sigma
         tmp = tf.matrix_triangular_solve(L, psi2, lower=True)
         AAT = tf.matrix_triangular_solve(L, tf.transpose(tmp), lower=True) / sigma2
-        B = AAT + eye(M)
+        B = AAT + tf.eye(M, dtype=float_type)
         LB = tf.cholesky(B)
         log_det_B = 2. * tf.reduce_sum(tf.log(tf.diag_part(LB)))
         c = tf.matrix_triangular_solve(LB, tf.matmul(A, self.Y), lower=True) / sigma
