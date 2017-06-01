@@ -34,6 +34,7 @@ class RGP(Model):
         H = len(kernels)
         self.N = N
         self.Lt = Lt
+        self.num_samples = 60 # TODO
 
         layers.append(InputLayer(kernels[0], N, Qs[0], Lt, Ms[0]))
         for i in range(1, H - 1):
@@ -49,9 +50,8 @@ class RGP(Model):
         
         return b_collect + self.layers[-1].build_likelihood(self.Lt, Xm, Xv)
 
-    @AutoFlow((tf.int32, []))
-    def predict_f(self, num_samples):
-        num_samples = 60 # todo
+    @AutoFlow()
+    def predict_f(self):
         
         X_m = []
         X_v = []
@@ -67,7 +67,7 @@ class RGP(Model):
         Ym, Yv = self.layers[-1].predict_x(self.N, self.Lt, xm, xv, xmm, xvm)
         
         # remaining points
-        for j in range(num_samples-1):
+        for j in range(self.num_samples-1):
             xm, xv, xmm, xvm = self.layers[0].predict_x(self.N, self.Lt, X_cms=X_m[0], X_cvs=X_v[0])
             X_m[0] = xm
             X_v[0] = xv
