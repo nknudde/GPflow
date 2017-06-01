@@ -43,13 +43,17 @@ class RGP(Model):
         self.layers = ParamList(layers)
 
     def build_likelihood(self):
-        b, Xm, Xv = self.layers[0].build_likelihood(self.Lt)
-        for i in range(1, len(self.layers) - 1):
+        b_collect, Xm, Xv = self.layers[0].build_likelihood(self.Lt)
+        for i in range(1, len(self.layers)-1):
             b, Xm, Xv = self.layers[i].build_likelihood(self.Lt, Xm, Xv)
-        return self.layers[-1].build_likelihood(self.Lt, Xm, Xv)
+            b_collect += b
+        
+        return b_collect + self.layers[-1].build_likelihood(self.Lt, Xm, Xv)
 
     @AutoFlow((tf.int32, []))
     def predict_f(self, num_samples):
+        num_samples = 60 # todo
+        
         X_m = []
         X_v = []
         xm, xv, xmm, xvm = self.layers[0].predict_x(self.N, self.Lt, init=True)
@@ -60,7 +64,7 @@ class RGP(Model):
             X_m.append(xm)
             X_v.append(xv)
         Ym, Yv = self.layers[-1].predict_x(self.N, self.Lt, xm, xv, xmm, xvm)
-        for i in range(59):
+        for i in range(num_samples-1):
             xm, xv, xmm, xvm = self.layers[0].predict_x(self.N, self.Lt, X_cms=X_m[0], X_cvs=X_v[0])
             X_m[0] = xm
             X_v[0] = xv
@@ -81,7 +85,7 @@ class Layer(Parameterized):
         self.kern = kernel
         self.likelihood = Gaussian()
         self.likelihood.variance = 1E-3
-        self.likelihood.variance.fixed = True
+        #self.likelihood.variance.fixed = True
 
     def hankel(self, v, L):
         """
